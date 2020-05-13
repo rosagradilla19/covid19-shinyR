@@ -3,6 +3,8 @@ library(shinydashboard)
 library(DT)
 library(mapproj)
 library(readr)
+library(readxl)
+library(data.table)
 library(tidyverse)
 library(scales)
 library(lubridate)
@@ -10,9 +12,30 @@ library(lubridate)
 shinyServer(function(input, output, session) {
   mygitpath <- 'https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv'
   df<- reactiveFileReader(1000, session, mygitpath, read_csv)
+  clean_dem<- read_excel("Data/Demographics.xls")
+  clean_eth<- read_excel("Data/Ethnicity.xlsx")
+  
+  data_long <- gather(clean_dem, Age, Count, `Under 5 years`:`85 years and over`, factor_key=TRUE)
+  pop_table<- data_long %>% group_by(County) %>% summarise(Total = sum(Total_Pop))  
+  data_long<- data_long %>% left_join(select(pop_table, c("County", "Total")), by = "County")
+  temp_age<- data_long %>% group_by(County, Age) %>% summarise(count = sum(Count))
+  new_age<- NULL
+  for (i in seq(1, nrow(temp_age), by = 3)) {
+    j = i + 1
+    k = i + 2
+    new_total<- data.frame("Count" = sum(temp_age[i,3] + temp_age[j,3] + temp_age[k,3]))
+    county<- data.frame("County" = temp_age[i,1])
+    new_row<- cbind(county, new_total)
+    new_age<- rbind(new_age, new_row)
+    new_age %>% left_join(select(data_long, c("County", "Total")), by = "County")
+  }
+  Age<- rep(c("0-14", "15-29", "30-44", "45-59", "60-74", "75+"), 67)
+  new_age<- data.frame(cbind(new_age, Age))
+  pop_table<- new_age %>% group_by(County) %>% summarise(Total = sum(Count))
+  new_age<- new_age %>% left_join(select(pop_table, c("County", "Total")), by = "County")
+  
   observe({updateSelectInput(session, "dates", label = "Select a date:", choices = unique(df()[df()$state=="Florida",]$date))})
   observe({updateSelectInput(session, "counties", label = "Select counties:", choices = unique(df()[df()$state=="Florida",]$county))})
-
   output$mytable <-DT::renderDataTable({
     df<- df()
     df<- df %>% filter(state == "Florida")
@@ -103,10 +126,30 @@ shinyServer(function(input, output, session) {
     }
     if (input$plotOptions == "county") {
       x<- input$counties
-      county_df<- df %>% filter(County %in% x) %>% group_by(County, Date) %>% summarise(Cases = sum(Cases))
+      county_df<- df %>% filter(County %in% x) 
+      county_df<- county_df %>% left_join(select(pop_table, c("County", "Total")), by = "County") %>% group_by(County, Date) %>% summarise(Cases = sum(Cases)/Total)
       p<- county_df %>% ggplot(aes(x = Date, y = Cases)) + geom_line(aes(colour = County)) + geom_point(aes(colour = County)) + 
-        theme_classic() +  scale_x_date(labels = date_format("%b-%d"), breaks='6 days') + labs(title = "COVID-19 Cases by County Since March")
+        theme_classic() +  scale_x_date(labels = date_format("%b-%d"), breaks='6 days') + labs(title = "COVID-19 Cases by County Since March", y = "Cases per Capita")
     }
     return(p)
   })
+  output$countiesinfo<- renderPlot({
+    if (input$plotOptions == "county" & input$demographic == "age") {
+      x<- input$counties
+      q<- new_age %>% filter(County %in% x) %>% mutate(Perc = (Count/Total)*100) %>% ggplot(aes(x = Age, y = Perc, fill = County)) + geom_bar(stat = 'identity', position = 'dodge') +
+        theme_classic() + scale_y_continuous(expand = c(0, 0)) + labs(title = "Percentage of County Population by Age", y = "Percentage")
+      return(q)
+    }
+    if (input$plotOptions == "county" & input$demographic == "eth") {
+      x<- input$counties
+      clean_eth<- clean_eth %>% filter(State == "Florida" & `2018` == "Yes") %>% left_join(pop_table, by = "County")
+      colnames(clean_eth)[14]<- "Total"
+      colnames(clean_eth)[7]<- "Eth Total"
+      clean_eth<- clean_eth %>% filter(`Hispanic Origin` != "Total") %>% filter(grepl(paste(x, collapse="|"), County)) %>% 
+        mutate(Perc = (`Eth Total`/Total)*100)
+      q<- clean_eth %>% ggplot(aes(x = County, y = Perc, fill = `Hispanic Origin`)) + geom_bar(stat = 'identity', position = 'dodge') +
+        theme_classic() + theme(axis.line=element_blank(), axis.ticks.y = element_blank(), axis.text.y=element_blank(), axis.title.y=element_blank())
+      return(q)
+    }
   })
+})
