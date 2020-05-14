@@ -1,27 +1,71 @@
 library(shiny)
 library(shinydashboard)
 library(DT)
+library(shinyWidgets)
+library(plotly)
+library(ggplot2)
 
-dashboardPage(
+js <- '.nav-tabs-custom .nav-tabs li.active {
+    border-top-color: #d73925;
+}"'
+
+dashboardPage(skin="red",
   dashboardHeader(title = "Florida's COVID-19"),
-  dashboardSidebar(sidebarMenu(id = "sidebar",
-    menuItem("Map", tabName = "map", icon = icon("map")), 
-    menuItem("Plot", tabName = "plot", icon = icon("bar-chart-o")),
-    conditionalPanel(condition ="input.sidebar == 'map'", selectInput("dates", "Select a date:", choices=c(""))),
-    conditionalPanel(condition ="input.sidebar == 'map'", radioButtons("mapOptions", "Select an option:", c("Cases by county"= "cases", "Deaths by county"= "deaths"))),
-    conditionalPanel(condition ="input.sidebar == 'plot'", radioButtons("plotOptions", "Select an option:", c("All Florida cases"= "florida", "Cases by counties"= "county"))),
-    conditionalPanel(condition = "input.sidebar == 'plot' && input.plotOptions == 'florida'", checkboxInput("model", "Add fitted model", FALSE)),
-    conditionalPanel(condition ="input.sidebar == 'plot' && input.plotOptions == 'county'", selectInput("counties", "Select counties:", choices=c(""), multiple = TRUE), 
-                     radioButtons("demographic", "Select a demographic view:", choices = c("Age" = "age", "Ethnicity" = "eth")))
-  )),
-  dashboardBody(tabItems(
-    tabItem(tabName = "map",
-      fluidRow(box(width=8, status="primary", title= "Map of Counties", solidHeader = TRUE, plotOutput("mymap")),
-         box(width=4, status="primary", title = "Table of Counties", solidHeader = TRUE, collapsible = TRUE, DT::dataTableOutput("mytable")))),
-    tabItem(tabName = "plot",
-      fluidRow(box(width=10, status="primary", title= "Cases Over Time", solidHeader = TRUE, plotOutput("mytimeseries"))),
-      conditionalPanel(condition ="input.sidebar == 'plot' && input.plotOptions == 'county'",
-                       fluidRow(box(width = 10, status = "primary", title = "Demographics by County", solidHeader = TRUE, plotOutput("countiesinfo"))))
+    dashboardSidebar(disable=TRUE),
+  dashboardBody(
+      tags$style(js),
+      setSliderColor("Red",1),
+    
+    #Info boxes
+    fluidRow(box(width = 4, valueBoxOutput("info1", tags$style("#dri {width:200px;}"))),
+             box(width = 4, valueBoxOutput("info2", tags$style("#dri {width:200px;}"))),
+             box(width = 4, valueBoxOutput("info3", tags$style("#dri {width:200px;}")))),
+    
+    
+    #Large Tab Box 
+    fluidRow(
+      tabBox(
+        title = NULL, width = 12,
+        # The id lets us use input$tabset1 on the server to find the current tab
+        id = "tabset1", height = "250px",
+        
+        
+        #Map Tab
+        tabPanel("Map", tabName = "map", icon = icon("map"), 
+                 
+                 #Maps
+                 fluidRow(box(width=6, status="danger", title= "Map of Cases by Counties",solidHeader = TRUE, plotlyOutput("mymapC")),
+                          box(width=6, status="danger", title= "Map of Deaths by Counties",solidHeader = TRUE, plotlyOutput("mymapD"))), 
+                 
+                 #Slider Input 
+                 fluidRow(column(12,align="center", sliderInput("dates", "Select a date:", min=0, max=0,value = NULL)))),
+        
+        
+        #Counties Tab
+        tabPanel("Counties", tabName = "counties", icon = icon("users", lib = "font-awesome"), 
+                 
+                 #Plots 
+                 fluidRow(box(width=6, status="danger", title= "Cases Over Time by County",solidHeader = TRUE, plotOutput("mytimeseries")),
+                                                                                                        
+                          box(width=6, status="danger", title= "Demographics by County",solidHeader = TRUE, plotOutput("countiesinfo"))),
+                 
+                 #Plot Inputs
+                 fluidRow(column(6, align="center", selectInput("counties", "Select counties:", choices=c(""), multiple = TRUE)),
+                          
+                          column(6, align="center", radioButtons("demographic", "Select a demographic view:", choices = c("Age" = "age", "Ethnicity" = "eth"), inline=TRUE)))),
+        
+        
+        #State Tab
+        tabPanel("Florida", tabName = "florida", icon = icon("flag", lib = "font-awesome"),
+                 
+                 #Plot
+                 fluidRow(column(3),box(width=6,status="danger", title= "Florida Cases",solidHeader = TRUE, plotOutput("mytimeseries2"))),
+                 
+                 #Plot Input
+                 fluidRow(column(12, align="center", checkboxInput("model", "Add fitted model", FALSE)))
+              )
+        )
+    )
     ))
-))
+
 
